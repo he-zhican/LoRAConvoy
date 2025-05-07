@@ -1,0 +1,7 @@
+.idea
+datasets/
+memories/
+models/
+results/
+testHG/
+test*.py
