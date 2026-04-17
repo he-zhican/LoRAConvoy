@@ -168,19 +168,11 @@ Response to user:{delimiter} <only output one `Action_id` as a int number of you
                         action_list[i] = vehicle_actions[cv.id]
                         self.save_decision(cv, action_list[i])
 
-                # 环境车辆生成逻辑
-                control_vehicles = self.env.convoy_vehicles
-                all_evs = self.env.get_all_evs()
-                front_evs_num = Road.vehicles_ahead_num(control_vehicles[7], all_evs)
-                if simulation_time % 10 == 0 and front_evs_num < 10:
-                    Road.spawn_vehicles_ahead(traci, control_vehicles[7], count, 10 - front_evs_num)
-
                 # 执行动作
                 self.env.step(action_list)
                 count += 1
                 simulation_time = traci.simulation.getTime()
                 print("simulation_time:",simulation_time)
-                print("front_evs_num:",front_evs_num)
 
         except KeyboardInterrupt:
             print("\n=== 退出控制模式 ===")

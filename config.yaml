@@ -1,12 +1,11 @@
 ############ Large language model config ############
-CHAT_MODEL: "/share01/hpc/lizhenglin/lys_home/WHUT/hzc/deepseek8b/"
-EMBEDDING_MODEL: "/share01/hpc/lizhenglin/lys_home/WHUT/hzc/embeddingModel"
-
+OPENAI_KEY: "sk-xxxxxx" # 'sk-xxxxxx'
+DECISION_MODEL: "LoRALlama1:latest"
+PREDICT_MODEL: "predictLlama:latest"
+OPENAI_API_BASE: "http://localhost:11434/v1"
 ############### settings ############
 SUMO_HOME: '' # the path to the folder where the sumo,sumo-gui
-few_shot_num: 3 # 0 for zero-shot
 episodes_num: 50 # run episodes
-memory_path: 'memories/20_mem'
-result_folder: 'results'
+result_folder: 'results/Lorallama7B_predict_result'
 simulation_duration: 2000 # step
 all_vehicles_decision: False # To save simulation time, you can choose to make decisions only on the vehicle at the front of the lane, and the other vehicles will default to IDLE

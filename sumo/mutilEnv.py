@@ -17,6 +17,7 @@ class MutilEnv(gym.Env):
         self.action_space = spaces.Discrete(5)
         self.render_mode = render_mode
         self.result_folder = result_folder
+        self.result_files = ""
         # os.environ['SUMO_HOME'] = '/usr/share/sumo'
         # Define the SUMO executable path
         self.client = traci
@@ -28,21 +29,22 @@ class MutilEnv(gym.Env):
         self.sumo_config = f"configs/convoy.sumocfg"
         # self.client.start([self.sumo_binary, "-c", self.sumo_config, "--start"])
         self.client.start([self.sumo_binary, "-c", self.sumo_config])
-        # self.cv_names = ["veh1", "veh2", "veh3", "veh4", "veh5", "veh6", "veh7", "veh8"]
-        self.cv_names = ["veh1"]
+        self.cv_names = ["veh1", "veh2", "veh3", "veh4", "veh5", "veh6", "veh7", "veh8"]
+        # self.cv_names = ["veh1"]
         self.desired_lanes = [1, 0, 1, 0, 1, 0, 1, 0]
         self.aver_speeds = [0] * 8  # The average speed of all convoy vehicles
         self.convoy_vehicles = []  # All convoy vehicles
         # Each time a decision is made by the LLM, the environment executes 10 time steps
-        self.decision_frequency = 1
+        self.decision_frequency = 10
         self.dt = 0.025
         self.video_writer = None
         # The width and height of the video frame
         self.width = 1148
-        self.height = 200
+        self.height = 800
 
     def reset(self, seed=None, **kwargs):
         super().reset(seed=seed)
+        episode = kwargs["episode"]
         if seed is not None:
             random.seed(seed)
         self.convoy_vehicles.clear()
@@ -53,9 +55,9 @@ class MutilEnv(gym.Env):
              "1.5"])
         self.client.simulationStep()
 
-        result_files = [self.result_folder + '/speed.txt', self.result_folder + '/position_error.txt']
+        self.result_files = [self.result_folder + f'/speed_{episode}.txt', self.result_folder + f'/position_error_{episode}.txt']
 
-        for file_path in result_files:
+        for file_path in self.result_files:
             if os.path.exists(file_path):
                 os.remove(file_path)
 
@@ -63,8 +65,8 @@ class MutilEnv(gym.Env):
         self.convoy_vehicles = self.get_all_cvs()
         # The perspective is focused on veh5
         if self.render_mode == "human":
-            self.client.gui.trackVehicle("View #0", "veh1")
-            self.client.gui.setZoom("View #0", 580)
+            self.client.gui.trackVehicle("View #0", "veh5")
+            self.client.gui.setZoom("View #0", 1000)
         # Update the states of the self and environment vehicles
         states = self.get_state()
         return states, {}
@@ -85,20 +87,15 @@ class MutilEnv(gym.Env):
             elif action == 4:  # decelerate
                 cv.target_speed = cv.last_target_speed - 2.0
 
-            # if forecast_info_list is not None:
-            #     for neighbor in cv.neighbors:
-            #         for fc_info in forecast_info_list:
-            #             if neighbor.id == fc_info[0]:
-            #                 neighbor.x = fc_info[1]
-            #                 neighbor.y = fc_info[2]
-            #                 neighbor.target_speed = fc_info[3]
+        # 生成环境车辆
+        self.spawn_environment_vehicles()
 
         states = []
         rewards = []
         dones = []
         truncateds = []
         for _ in range(self.decision_frequency):
-            # self.write_data()
+            self.write_data()
             states.clear()
             rewards.clear()
             dones.clear()
@@ -117,8 +114,8 @@ class MutilEnv(gym.Env):
             if True in dones or True in truncateds:
                 break
 
-            # if self.render_mode == "human":
-            #     self.render()
+            if self.render_mode == "human":
+                self.render()
 
         return states, rewards, dones, truncateds, {}
 
@@ -138,23 +135,19 @@ class MutilEnv(gym.Env):
         truncated = False  # Termination caused by the convoy vehicle driving the entire road
         reward = 0
 
-        # for neighbor in convoy_vehicle.neighborhoods:
-        #     if neighbor is not None:
-        #         # collision with neighborhoods
-        #         if Road.check_collision(convoy_vehicle, neighbor):
-        #             done = True
-        #             break
-        #
-        # for ev in convoy_vehicle.surround_evs:
-        #     if ev is not None:
-        #         # collision with environment vehicles
-        #         if Road.check_collision(convoy_vehicle, ev):
-        #             done = True
-        #             break
+        for neighbor in convoy_vehicle.neighborhoods:
+            if neighbor is not None:
+                # collision with neighborhoods
+                if Road.check_collision(convoy_vehicle, neighbor):
+                    done = True
+                    break
 
-        # Leave the road (at this point the vehicle has traveled the entire distance)
-        # if convoy_vehicle.x < 0 or convoy_vehicle.x >= 980:
-        #     truncated = True
+        for ev in convoy_vehicle.surround_evs:
+            if ev is not None:
+                # collision with environment vehicles
+                if Road.check_collision(convoy_vehicle, ev):
+                    done = True
+                    break
 
         return reward, done, truncated
 
@@ -174,14 +167,15 @@ class MutilEnv(gym.Env):
         return position_errors
 
     def write_data(self):
-        with open(self.result_folder + '/speed.txt', 'a') as file:
+        with open(self.result_files[0], 'a') as file:
             for cv in self.convoy_vehicles:
                 file.write(f'{round(cv.speed, 2)},')
             file.write('\n')
-        with open(self.result_folder + '/position_error.txt', 'a') as file:
+        with open(self.result_files[1], 'a') as file:
             position_errors = self.get_position_error()
             for position_error in position_errors:
                 file.write(f'{round(position_error, 2)},')
+            file.write('\n')
 
     def get_avail_actions(self, cv, action):
         if (cv.lane == 2 and action == 0) or (cv.lane == 0 and action == 2):
@@ -220,6 +214,52 @@ class MutilEnv(gym.Env):
             if cv.find_neighborhoods(self.convoy_vehicles)[2] is None:
                 all_lead_cvs.append(cv)
         return all_lead_cvs
+
+    def get_first_convoy_vehicle(self):
+        """
+        Find the first vehicle in the convoy - the one that is furthest ahead.
+        Returns the leading convoy vehicle.
+        """
+        # Get all lead vehicles in the convoy
+        lead_cvs = self.get_all_lead_cvs()
+
+        if not lead_cvs:
+            return None
+
+        # If only one lead vehicle, return it directly
+        if len(lead_cvs) == 1:
+            return lead_cvs[0]
+
+        # Among multiple lead vehicles, find the one that is most forward
+        first_cv = lead_cvs[0]
+        for i in range(1, len(lead_cvs)):
+            # Compare positions using Road.front_or_behind
+            # If front_or_behind returns positive value, lead_cvs[i] is ahead of first_cv
+            relation = Road.front_or_behind(first_cv.x, first_cv.y, lead_cvs[i].x, lead_cvs[i].y)
+            if relation == 1:  # lead_cvs[i] is ahead of first_cv
+                first_cv = lead_cvs[i]
+
+        return first_cv
+
+    def spawn_environment_vehicles(self, ev_num=10):
+        """
+        Spawn environment vehicles ahead of the first convoy vehicle
+        """
+        # Get the first vehicle in the convoy
+        first_cv = self.get_first_convoy_vehicle()
+
+        if first_cv is None:
+            return
+
+        sim_time = self.client.simulation.getTime()
+
+        if abs(sim_time % 10 - 0.025) < 1e-10:
+            all_evs = self.get_all_evs()
+            front_evs_num = Road.vehicles_ahead_num(first_cv, all_evs)
+            if front_evs_num < ev_num:
+                Road.spawn_vehicles_ahead(self.client, first_cv, sim_time,
+                                          ev_num - front_evs_num,
+                                          min_gap=60, max_gap=300)
 
     def render(self):
         screenshot_filename = f"screenshots/screenshot.png"

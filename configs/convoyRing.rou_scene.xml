@@ -23,37 +23,19 @@
 
     <trip id="veh1" type="Car0" depart="0" departPos="50" from="121to0" to="120to121" departSpeed="25.0" departLane="1"
           arrivalLane="1"/>
-<!--    <trip id="veh2" type="Car0" depart="0" departPos="55" from="121to0" to="120to121" departSpeed="25.0" departLane="0"-->
-<!--          arrivalLane="0"/>-->
-<!--    <trip id="veh3" type="Car0" depart="0" departPos="60" from="121to0" to="120to121" departSpeed="25.0" departLane="1"-->
-<!--          arrivalLane="1"/>-->
-<!--    <trip id="veh4" type="Car0" depart="0" departPos="65" from="121to0" to="120to121" departSpeed="25.0" departLane="0"-->
-<!--          arrivalLane="0"/>-->
-<!--    <trip id="veh5" type="Car0" depart="0" departPos="70" from="121to0" to="120to121" departSpeed="25.0" departLane="1"-->
-<!--          arrivalLane="1"/>-->
-<!--    <trip id="veh6" type="Car0" depart="0" departPos="75" from="121to0" to="120to121" departSpeed="25.0" departLane="0"-->
-<!--          arrivalLane="0"/>-->
-<!--    <trip id="veh7" type="Car0" depart="0" departPos="80" from="121to0" to="120to121" departSpeed="25.0" departLane="1"-->
-<!--          arrivalLane="1"/>-->
-<!--    <trip id="veh8" type="Car0" depart="0" departPos="85" from="121to0" to="120to121" departSpeed="25.0" departLane="0"-->
-<!--          arrivalLane="0"/>-->
-
-    <!--  The number variable is used to modify the number of environment vehicles -->
-<!--    <flow id="surround_cars" type="conservative_evs" begin="0" end="0" number="20" departSpeed="max" departPos="random"-->
-<!--          departLane="random">-->
-<!--        <route edges="121to0 0to1 1to2 2to3 3to4 4to5 5to6 6to7 7to8 8to9 9to10-->
-<!--                 10to11 11to12 12to13 13to14 14to15 15to16 16to17 17to18 18to19 19to20-->
-<!--                 20to21 21to22 22to23 23to24 24to25 25to26 26to27 27to28 28to29 29to30-->
-<!--                 30to31 31to32 32to33 33to34 34to35 35to36 36to37 37to38 38to39 39to40-->
-<!--                 40to41 41to42 42to43 43to44 44to45 45to46 46to47 47to48 48to49 49to50-->
-<!--                 50to51 51to52 52to53 53to54 54to55 55to56 56to57 57to58 58to59 59to60-->
-<!--                 60to61 61to62 62to63 63to64 64to65 65to66 66to67 67to68 68to69 69to70-->
-<!--                 70to71 71to72 72to73 73to74 74to75 75to76 76to77 77to78 78to79 79to80-->
-<!--                 80to81 81to82 82to83 83to84 84to85 85to86 86to87 87to88 88to89 89to90-->
-<!--                 90to91 91to92 92to93 93to94 94to95 95to96 96to97 97to98 98to99 99to100-->
-<!--                 100to101 101to102 102to103 103to104 104to105 105to106 106to107 107to108 108to109 109to110-->
-<!--                 110to111 111to112 112to113 113to114 114to115 115to116 116to117 117to118 118to119 119to120-->
-<!--                 120to121"/>-->
-<!--    </flow>-->
+    <trip id="veh2" type="Car0" depart="0" departPos="55" from="121to0" to="120to121" departSpeed="25.0" departLane="0"
+          arrivalLane="0"/>
+    <trip id="veh3" type="Car0" depart="0" departPos="60" from="121to0" to="120to121" departSpeed="25.0" departLane="1"
+          arrivalLane="1"/>
+    <trip id="veh4" type="Car0" depart="0" departPos="65" from="121to0" to="120to121" departSpeed="25.0" departLane="0"
+          arrivalLane="0"/>
+    <trip id="veh5" type="Car0" depart="0" departPos="70" from="121to0" to="120to121" departSpeed="25.0" departLane="1"
+          arrivalLane="1"/>
+    <trip id="veh6" type="Car0" depart="0" departPos="75" from="121to0" to="120to121" departSpeed="25.0" departLane="0"
+          arrivalLane="0"/>
+    <trip id="veh7" type="Car0" depart="0" departPos="80" from="121to0" to="120to121" departSpeed="25.0" departLane="1"
+          arrivalLane="1"/>
+    <trip id="veh8" type="Car0" depart="0" departPos="85" from="121to0" to="120to121" departSpeed="25.0" departLane="0"
+          arrivalLane="0"/>
 
 </routes>

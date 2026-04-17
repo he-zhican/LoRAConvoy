@@ -9,15 +9,26 @@ from reasoning.scenarioDescription import ScenarioDescription
 
 
 class SingleVehicleController:
-    def __init__(self, output_file: str = "human_decisions.json"):
+    def __init__(self, output_file: str = "human_decisions.json",
+                 state_file: str = "state_predict.json", history_length: int = 5):
         """
         单车控制器（基于修改后的MutilEnv）
         按键改成 on_release_key 事件驱动
         """
         self.output_file = output_file
+        self.state_file = state_file
+        self.history_length = history_length
         self.decision_data = []
         self.step_count = 0
         self.last_save_step = 0
+
+        # 用于缓存每辆车最近 history_length 步的状态
+        # 格式：{ vehicle_id: [ {x,y,speed,lane}, ... ] }
+        self.state_buffer = {}
+
+        # 最终用于训练的数据列表
+        # 每条：{"vehicle_id":vid, "history":[...], "next":{...}}
+        self.state_samples = []
 
         # 初始化环境（仅包含veh1）
         self.env = MutilEnv(render_mode="human", result_folder="results")
@@ -38,7 +49,7 @@ class SingleVehicleController:
         for key in self.action_mapping:
             keyboard.on_release_key(key, self._on_key_release)
 
-        os.makedirs("datasets", exist_ok=True)
+        os.makedirs("dataset", exist_ok=True)
 
     def _on_key_release(self, event):
         """抬起时触发一次，将 action 存到队列里"""
@@ -53,6 +64,7 @@ class SingleVehicleController:
 
     def get_scenario_description(self) -> str:
         ego = self.get_ego_vehicle()
+        print("ego.speed:",  ego.speed)
         if not ego:
             return "No vehicle available"
         sce = ScenarioDescription(self.env, ego)
@@ -72,10 +84,59 @@ f"Available actions:\n{sce.availableActionsDescription()}"
         if action != 1:
             return True
         # 默认动作每60步存一次
-        if self.step_count - self.last_save_step >= 60:
+        if self.step_count - self.last_save_step >= 5:
             self.last_save_step = self.step_count
             return True
         return False
+
+    def save_state_samples(self):
+        # 每隔一段时间写一次文件，避免内存爆炸
+        with open(self.state_file, "w", encoding="utf-8") as f:
+            json.dump(self.state_samples, f, indent=2, ensure_ascii=False)
+
+    def collect_states(self):
+        system_msg = """You are an expert driving state predictor. Given a vehicle's historical states (position x,y, speed, lane) over the last few timesteps,
+you must predict its current state (x, y, speed, lane) at the next timestep. Only output a JSON object with fields: x, y, speed, lane.
+Do not add any extra text or explanation.
+        """
+
+        # 获取当前所有你想预测的车辆，比如 convoy_vehicles：
+        for veh in self.env.convoy_vehicles:
+            vid = veh.id
+            # 获取当前状态
+            cur = {
+                "x": round(veh.x, 2),
+                "y": round(veh.y, 2),
+                "speed": round(veh.speed, 2),
+                "lane": int(veh.lane)
+            }
+            buf = self.state_buffer.setdefault(vid, [])
+            buf.append(cur)
+            # 保持缓存长度
+            if len(buf) > self.history_length + 1:
+                buf.pop(0)
+
+            # 如果缓存里有 history_length + “下一时刻” 共 N+1 个点，就生成一条样本
+            if len(buf) == self.history_length + 1:
+                history = buf[:-1]
+                next_state = buf[-1]
+                # 构造 history 文本
+                history_str = []
+                for i, s in enumerate(history, 1):
+                    history_str.append(
+                        f"t-{len(history) - i + 1}: x={s['x']}, y={s['y']}, speed={s['speed']}, lane={s['lane']}"
+                    )
+                input_block = "History:\n" + "\n".join(history_str)
+                output_block = json.dumps(next_state, ensure_ascii=False)
+
+                record = {
+                    "instruction": system_msg,
+                    "input": input_block,
+                    "output": output_block
+                }
+                self.state_samples.append(record)
+                # 滑动窗口：
+                buf.pop(0)
 
     def save_decision(self, action: int):
         if not self.should_save_data(action):
@@ -83,30 +144,16 @@ f"Available actions:\n{sce.availableActionsDescription()}"
         system_msg = """You are a large language model. Now you act as a mature driving assistant, who can give accurate and correct advice for human driver in complex highway driving scenarios.
 You will be given a detailed description of the driving scenario of current frame along with your history of previous decisions. You will also be given the available actions you are allowed to take. All of these elements are delimited by {delimiter}.
 Your response should use the following format:
-Response to user:{delimiter} <only output one `Action_id` as a int number of you decision, without any action name or explanation. The output decision must be unique and not ambiguous, for example if you decide to IDLE, then output `1`>"""
+<only output one `Action_id` as a int number of you decision, without any action name or explanation. The output decision must be unique and not ambiguous, for example if you decide to IDLE, then output `1`>"""
         scenario_desc = self.get_scenario_description()
         record = {
             "instruction": system_msg,
             "input": scenario_desc,
-            "output": f"Response to user:### {action}"
+            "output": f"{action}"
         }
         self.decision_data.append(record)
         with open(self.output_file, 'w', encoding='utf-8') as f:
             json.dump(self.decision_data, f, indent=2, ensure_ascii=False)
-
-    def spawn_environment_vehicles(self, ev_num=10):
-        ego = self.get_ego_vehicle()
-        if not ego:
-            return
-        print("veh1.speed:",ego.speed)
-        sim_time = traci.simulation.getTime()
-        if sim_time % 10 == 0:
-            all_evs = self.env.get_all_evs()
-            front_evs_num = Road.vehicles_ahead_num(ego, all_evs)
-            if front_evs_num < ev_num:
-                Road.spawn_vehicles_ahead(traci, ego, sim_time,
-                                          ev_num - front_evs_num,
-                                          min_gap=20, max_gap=300)
 
     def run(self):
         print("=== 单车控制模式 ===")
@@ -118,26 +165,36 @@ Response to user:{delimiter} <only output one `Action_id` as a int number of you
         print("===================")
         print("数据保存策略：")
         print(" - 键盘控制动作立即保存")
-        print(" - 自动保持动作每60步保存一次")
+        print(" - 自动保持动作每20步保存一次")
         print("===================")
         test_list_seed = [52, 5838, 2421, 7294, 9650, 4176, 6382, 8765, 1348, 5326,
                           4213, 2572, 5678, 8587, 512, 7523, 6321, 5214, 31, 8317,
                           123, 456, 789, 101, 202, 303, 404, 505, 606, 707,
                           808, 909, 111, 222, 333, 444, 555, 666, 777, 888,
                           999, 121, 232, 343, 454, 565, 676, 787, 898, 919]
-        obs, _ = self.env.reset(seed=test_list_seed[1])
+        obs, _ = self.env.reset(seed=test_list_seed[26])
         try:
             while traci.simulation.getMinExpectedNumber() > 0:
                 self.step_count += 1
-                self.spawn_environment_vehicles()
+                # self.spawn_environment_vehicles()
 
                 # 如果回调里有动作，就用它；否则保持 (1)
                 action = self.next_action if self.next_action is not None else 1
                 # 用过之后清空，保证只触发一次
                 self.next_action = None
-
                 self.save_decision(action)
-                self.env.step([action])
+
+                # **在动作执行前收集“上一步”的状态
+                self.collect_states()
+
+                obses, rewards, dones, truncateds, _ = self.env.step([action])
+
+                if True in dones or True in truncateds:
+                    break
+
+                # 每 100 步保存 state 样本到磁盘
+                if self.step_count % 100 == 0:
+                    self.save_state_samples()
 
         except KeyboardInterrupt:
             print("\n=== 退出控制模式 ===")
@@ -148,6 +205,7 @@ Response to user:{delimiter} <only output one `Action_id` as a int number of you
 
 if __name__ == "__main__":
     current_time = time.strftime("%Y%m%d-%H%M%S")
-    path = f"datasets/human_decisions_{current_time}.json"
-    controller = SingleVehicleController(path)
+    decision_path = f"dataset/human_decisions_{current_time}.json"
+    state_predict_path = f"dataset/state_predict_{current_time}.json"
+    controller = SingleVehicleController(decision_path, state_predict_path)
     controller.run()

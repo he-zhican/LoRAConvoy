@@ -3,5 +3,5 @@ datasets/
 memories/
 models/
 results/
-testHG/
-test*.py
+draw*.py
+countPredictResult.py

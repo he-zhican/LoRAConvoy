@@ -5,10 +5,11 @@ import random
 from sumo.vehicle import Vehicle
 from sumo.simpleStruct import TIMESTEP, Direction
 from sumo.road import Road
+from reasoning.statePredictor import StatePredictor
 
 
 class ConvoyVehicle(Vehicle):
-    def __init__(self, vehicle_id, desired_lane=-1, desired_speed=25, state=0, p_loss=0.05, history_length=5):
+    def __init__(self, vehicle_id, desired_lane=-1, desired_speed=25, p_loss=0.005, history_length=5):
         super().__init__(vehicle_id)
         self.target_lane = desired_lane
         self.desired_lane = desired_lane
@@ -46,6 +47,10 @@ class ConvoyVehicle(Vehicle):
         self.history_buffer = {}
         self.history_length = history_length
 
+        # 状态预测器
+        self.state_predictor = StatePredictor(verbose=False)
+        # self.state_predictor = None
+
     def update_state(self, client):
         super().update_state(client)
         self.new_G_force = 0
@@ -58,37 +63,54 @@ class ConvoyVehicle(Vehicle):
         print(f"target_lane:{self.target_lane}")
         print(f"desired_lane:{self.desired_lane}")
 
-    def predict_state(self, vid):
+    def predict_state(self, vid, actual_vehicle=None):
         """
-        用历史轨迹预测当前状态：
-        这里只给出一个示例：用最后两点做线性外推。
-        实际中你可以接入微调后的 LLM、Transformer、或者其他时序模型。
+        使用大模型（LLM）预测邻居车辆的当前状态。
+        
+        Args:
+            vid: 车辆ID
+            actual_vehicle: 可选的真实车辆对象，用于精度计算
         """
+        if self.state_predictor is None:
+            return None
+
         buf = self.history_buffer.get(vid, [])
-        if len(buf) < 2:
-            return None  # 无足够信息，返回 None，后续会被忽略
-        # 简单外推：根据最后两点 x,y 速度做线性预测
-        (x1, y1, s1, l1), (x2, y2, s2, l2) = buf[-2], buf[-1]
-        dx, dy = x2 - x1, y2 - y1
-        ds = s2 - s1
-        # 假设 timestep=1，lane保持不变
-        pred = ConvoyVehicle(vid)
-        pred.x = x2 + dx
-        pred.y = y2 + dy
-        pred.speed = s2 + ds
-        pred.lane = l2
-        return pred
+        if len(buf) < 3:
+            return None  # 无足够历史，跳过
+
+        # 如果提供了真实车辆，准备真实值用于精度计算
+        actual_state = None
+        if actual_vehicle is not None:
+            actual_state = {
+                'x': actual_vehicle.x,
+                'y': actual_vehicle.y,
+                'speed': actual_vehicle.speed,
+                'lane': int(actual_vehicle.lane)
+            }
+
+        result = self.state_predictor.predict_state(vid, buf, actual_state=actual_state)
+        if result is None:
+            return None
+
+        # 用预测结果构造一个虚拟的 ConvoyVehicle 实例
+        predicted = ConvoyVehicle(vid)
+        predicted.x = result['x']
+        predicted.y = result['y']
+        predicted.speed = result['speed']
+        predicted.lane = result['lane']
+        return predicted
 
     def maybe_receive(self, cv):
         """模拟通信：要么正常接收，要么丢包并调用预测"""
+        if cv is None:
+            return None
         if random.random() < self.p_loss:
-            # 丢包：尝试从历史缓冲里预测
-            return self.predict_state(cv.id)
+            # 丢包：尝试从历史缓冲里预测，传递真实车辆用于精度计算
+            return self.predict_state(cv.id, actual_vehicle=cv)
         else:
             return copy.copy(cv)
 
     def find_neighborhoods(self, c_vehicles):
-        # When the ego-vehicle successfully leaving from the convoy, the neighbor node information is no longer obtained
         for cv in c_vehicles:
             if cv.id == self.id or abs(cv.target_lane - self.target_lane) > 1:
                 continue
@@ -126,6 +148,9 @@ class ConvoyVehicle(Vehicle):
             # 当邻居节点发生通信丢包的情况，自车使用的是由大模型预测的邻居节点的状态信息，浅拷贝可以避免修改邻居节点本体的状态信息
             self.neighborhoods[lane_index] = self.maybe_receive(front_v)
             self.neighborhoods[lane_index + 1] = self.maybe_receive(behind_v)
+
+            # self.neighborhoods[lane_index] = copy.copy(front_v)
+            # self.neighborhoods[lane_index + 1] = copy.copy(behind_v)
 
         # if there is N_f between ego and N_fj, then N_fj is not considered as a neighbor node
         if self.neighborhoods[2] is not None:
